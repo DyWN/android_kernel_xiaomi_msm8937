@@ -405,8 +405,6 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -mcpu=cortex-a53 -mtune=cortex-a53 \
 		   -Wno-format-security \
-		   -Wno-array-bounds \
-		   -Wno-maybe-uninitialized \
 		   -std=gnu89
 
 KBUILD_AFLAGS_KERNEL :=
