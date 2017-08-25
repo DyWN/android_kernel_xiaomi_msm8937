@@ -3507,9 +3507,7 @@ static int __extent_writepage(struct page *page, struct writeback_control *wbc,
 	int write_flags;
 	unsigned long nr_written = 0;
 
-
 	write_flags = wbc_to_write_flags(wbc);
-
 
 	trace___extent_writepage(page, inode, wbc);
 
