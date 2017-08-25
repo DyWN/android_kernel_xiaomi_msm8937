@@ -3507,10 +3507,9 @@ static int __extent_writepage(struct page *page, struct writeback_control *wbc,
 	int write_flags;
 	unsigned long nr_written = 0;
 
-	if (wbc->sync_mode == WB_SYNC_ALL)
-		write_flags = WRITE_SYNC;
-	else
-		write_flags = WRITE;
+
+	write_flags = wbc_to_write_flags(wbc);
+
 
 	trace___extent_writepage(page, inode, wbc);
 
@@ -3753,7 +3752,8 @@ static noinline_for_stack int write_one_eb(struct extent_buffer *eb,
 	u64 offset = eb->start;
 	unsigned long i, num_pages;
 	unsigned long bio_flags = 0;
-	int rw = (epd->sync_io ? WRITE_SYNC : WRITE) | REQ_META;
+	unsigned long start, end;
+	unsigned int write_flags = wbc_to_write_flags(wbc) | REQ_META;
 	int ret = 0;
 
 	clear_bit(EXTENT_BUFFER_WRITE_ERR, &eb->bflags);
