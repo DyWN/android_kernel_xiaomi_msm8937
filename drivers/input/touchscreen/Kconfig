@@ -254,6 +254,18 @@ config TOUCHSCREEN_DA9052
 	  To compile this driver as a module, choose M here: the
 	  module will be called da9052_tsi.
 
+config TOUCHSCREEN_DOUBLETAP2WAKE
+	tristate "Doubletap2wake serial touchscreen"
+	select SERIO
+	help
+	  Say Y here if you enable Doubletap2wake funtion  on android 
+	  your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called doubletap2wake.
+
 config TOUCHSCREEN_DYNAPRO
 	tristate "Dynapro serial touchscreen"
 	select SERIO
