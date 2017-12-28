@@ -25,6 +25,7 @@
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
+
 static DEFINE_SPINLOCK(tz_lock);
 static DEFINE_SPINLOCK(sample_lock);
 static DEFINE_SPINLOCK(suspend_lock);
@@ -342,6 +343,11 @@ static int tz_init(struct devfreq_msm_adreno_tz_data *priv,
 
 	return ret;
 }
+#ifdef CONFIG_ADRENO_IDLER
+
+extern int adreno_idler(struct devfreq_dev_status stats, struct devfreq *devfreq, unsigned long *freq);
+
+#endif
 
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 				u32 *flag)
@@ -359,6 +365,15 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 		pr_err(TAG "get_status failed %d\n", result);
 		return result;
 	}
+	/* Prevent overflow */
+
+	if (stats.busy_time >= (1 << 24) || stats.total_time >= (1 << 24)) {
+
+		stats.busy_time >>= 7;
+
+		stats.total_time >>= 7;
+
+	}
 
 	*freq = stats.current_frequency;
 	
@@ -370,6 +385,17 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 		*freq = devfreq->profile->freq_table[devfreq->profile->max_state - 1];
 		return 0;
 	}
+	#ifdef CONFIG_ADRENO_IDLER
+
+	if (adreno_idler(stats, devfreq, freq)) {
+
+		/* adreno_idler has asked to bail out now */
+
+		return 0;
+
+	}
+
+#endif
 	
 	priv->bin.total_time += stats.total_time;
 	priv->bin.busy_time += stats.busy_time;
@@ -537,7 +563,6 @@ static int tz_suspend(struct devfreq *devfreq)
 	__secure_tz_reset_entry2(scm_data, sizeof(scm_data), priv->is_64);
 	display_on = is_display_on();
 	suspended = true;
-
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
 	return 0;
