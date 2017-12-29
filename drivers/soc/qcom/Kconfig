@@ -904,3 +904,12 @@ config WCD_DSP_GLINK
 source "drivers/soc/qcom/memshare/Kconfig"
 
 endif # ARCH_MSM
+
+config AUTOSMP
+	bool "Multi-core automatic hotplug support"
+	depends on SMP && HOTPLUG_CPU
+	default n
+	help
+	  Automatically hotplugs the multiple cpu cores on and off
+	  based on cpu load and suspend state.
+
