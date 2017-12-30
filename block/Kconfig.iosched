@@ -35,6 +35,14 @@ config IOSCHED_DEADLINE
 config IOSCHED_MAPLE
 	tristate "Maple I/O scheduler"
 	default y
+	
+config IOSCHED_FIOPS
+	tristate "IOPS based I/O scheduler"
+	default y
+	---help---
+	  This is an IOPS based I/O scheduler. It will try to distribute
+          IOPS equally among all processes in the system. It's mainly for
+          Flash based storage.
 
 config IOSCHED_CFQ
 	tristate "CFQ I/O scheduler"
