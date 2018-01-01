@@ -33,7 +33,9 @@
 #include <linux/proc_fs.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
-
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+#include <linux/input/doubletap2wake.h>
+#endif
 #if CTP_CHARGER_DETECT
 #include <linux/power_supply.h>
 #endif
@@ -185,10 +187,10 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 	}
 
 #if CTP_CHARGER_DETECT
-	if (!batt_psy)
+	if (!batt_psy){
 
 		batt_psy = power_supply_get_by_name("usb");
-	else {
+	}else {
 		is_charger_plug = (u8)power_supply_get_battery_charge_state(batt_psy);
 
 		if (is_charger_plug != pre_charger_status) {
@@ -203,8 +205,7 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 	ip_dev = data->input_dev;
 	buf = data->tch_data;
 
-	rc = ft5x06_i2c_read(data->client, &reg, 1,
-						 buf, data->tch_data_len);
+	rc = ft5x06_i2c_read(data->client, &reg, 1,buf, data->tch_data_len);
 	if (rc < 0) {
 		dev_err(&data->client->dev, "%s: read data fail\n", __func__);
 		return IRQ_HANDLED;
@@ -231,6 +232,9 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 			break;
 
 		if (y == 2000) {
+			#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+			if(dt2w_switch && dt2w_scr_suspended) return IRQ_HANDLED;
+			#endif
 			y = 1344;
 
 			switch (x) {
@@ -278,9 +282,9 @@ static int ft5x06_power_on(struct ft5x06_ts_data *data, bool on)
 {
 	int rc;
 
-	if (!on)
+	if (!on){
 		goto power_off;
-
+	}
 	rc = regulator_enable(data->vdd);
 	if (rc) {
 		dev_err(&data->client->dev,
@@ -386,8 +390,7 @@ pwr_deinit:
 	return 0;
 }
 
-static int ft5x06_ts_pinctrl_select(struct ft5x06_ts_data *ft5x06_data,
-									bool on)
+static int ft5x06_ts_pinctrl_select(struct ft5x06_ts_data *ft5x06_data,bool on)
 {
 	struct pinctrl_state *pins_state;
 	int ret;
@@ -416,9 +419,12 @@ static int ft5x06_ts_pinctrl_select(struct ft5x06_ts_data *ft5x06_data,
 static int ft5x06_ts_suspend(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
-	char txbuf[2], i;
+	
 	int err;
-
+	#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	if(!dt2w_switch || in_phone_call){
+	#endif
+	char txbuf[2], i;	
 	if (data->loading_fw) {
 		dev_info(dev, "Firmware loading in process...\n");
 		return 0;
@@ -462,6 +468,10 @@ static int ft5x06_ts_suspend(struct device *dev)
 	}
 
 	data->suspended = true;
+	
+	#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	}
+	#endif
 
 	return 0;
 
@@ -482,54 +492,54 @@ static int ft5x06_ts_resume(struct device *dev)
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	int err;
 
-	if (!data->suspended) {
-		dev_dbg(dev, "Already in awake state\n");
-		return 0;
-	}
 
+	 
+	if (!data->suspended) {
+			dev_dbg(dev, "Already in awake state\n");
+			return 0;
+ 		}
+	
 
 	if (data->pdata->power_on) {
-		err = data->pdata->power_on(true);
-		if (err) {
-			dev_err(dev, "power on failed");
-			return err;
+			err = data->pdata->power_on(true);
+			if (err) {
+				dev_err(dev, "power on failed");
+				return err;
+			}
+		} else {
+			err = ft5x06_power_on(data, true);
+			if (err) {
+				dev_err(dev, "power on failed");
+				return err;
+			}
 		}
-	} else {
-		err = ft5x06_power_on(data, true);
-		if (err) {
-			dev_err(dev, "power on failed");
-			return err;
-		}
-	}
-
 	if (gpio_is_valid(data->pdata->reset_gpio)) {
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-		msleep(data->pdata->hard_rst_dly);
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
-	}
+			gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+			msleep(data->pdata->hard_rst_dly);
+			gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+		}
 
 	msleep(data->pdata->soft_rst_dly);
-
 	enable_irq(data->client->irq);
-
-#if CTP_CHARGER_DETECT
+	#if CTP_CHARGER_DETECT
 		batt_psy = power_supply_get_by_name("usb");
 		if (!batt_psy)
 			CTP_ERROR("tp resume battery supply not found\n");
 		else {
-			is_charger_plug = (u8)power_supply_get_battery_charge_state(batt_psy);
+			is_charger_plug =
+				(u8) power_supply_get_battery_charge_state(batt_psy);
 
-			CTP_DEBUG("is_charger_plug %d, prev %d", is_charger_plug, pre_charger_status);
+			CTP_DEBUG("is_charger_plug %d, prev %d", is_charger_plug,
+				  pre_charger_status);
 			if (is_charger_plug) {
 				ft5x0x_write_reg(update_client, 0x8B, 1);
 			} else {
 				ft5x0x_write_reg(update_client, 0x8B, 0);
 			}
-		}
-		pre_charger_status = is_charger_plug;
-#endif
+ 		}
 
-
+	pre_charger_status = is_charger_plug;
+		#endif
 	data->suspended = false;
 
 	return 0;
@@ -569,18 +579,23 @@ static int fb_notifier_callback(struct notifier_block *self,
 	struct fb_event *evdata = data;
 	int *blank;
 	struct ft5x06_ts_data *ft5x06_data =
-			container_of(self, struct ft5x06_ts_data, fb_notif);
+		container_of(self, struct ft5x06_ts_data, fb_notif);
 
 	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
 		ft5x06_data && ft5x06_data->client) {
 		blank = evdata->data;
-		if (*blank == FB_BLANK_UNBLANK
-				|| *blank == FB_BLANK_NORMAL
-				|| *blank == FB_BLANK_VSYNC_SUSPEND)
-		   schedule_work(&ft5x06_data->fb_notify_work);
+		if (*blank == FB_BLANK_UNBLANK) {
+ 			schedule_work(&ft5x06_data->fb_notify_work);
+			#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+			dt2w_scr_suspended = false;
+			#endif
+		}
 		 else if (*blank == FB_BLANK_POWERDOWN) {
 			flush_work(&ft5x06_data->fb_notify_work);
 			ft5x06_ts_suspend(&ft5x06_data->client->dev);
+			#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+			dt2w_scr_suspended = true;
+			#endif
 		}
 	}
 
@@ -702,15 +717,13 @@ static int ft5x06_parse_dt(struct device *dev,
 	else
 		return rc;
 
-	rc = of_property_read_u32(np, "ftech,hard-reset-delay-ms",
-							  &temp_val);
+	rc = of_property_read_u32(np, "ftech,hard-reset-delay-ms",&temp_val);
 	if (!rc)
 		pdata->hard_rst_dly = temp_val;
 	else
 		return rc;
 
-	rc = of_property_read_u32(np, "ftech,soft-reset-delay-ms",
-							  &temp_val);
+	rc = of_property_read_u32(np, "ftech,soft-reset-delay-ms",&temp_val);
 	if (!rc)
 		pdata->soft_rst_dly = temp_val;
 	else
@@ -750,8 +763,7 @@ static int ft5x06_parse_dt(struct device *dev,
 	} else if (rc != -EINVAL)
 		pdata->info.upgrade_id_2 =  temp_val;
 
-	rc = of_property_read_u32(np, "ftech,fw-delay-readid-ms",
-							  &temp_val);
+	rc = of_property_read_u32(np, "ftech,fw-delay-readid-ms", &temp_val);
 	if (rc && (rc != -EINVAL)) {
 		dev_err(dev, "Unable to read fw delay read id\n");
 		return rc;
@@ -867,13 +879,13 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	data->tch_data_len = FT_TCH_LEN(pdata->num_max_touches);
 	data->tch_data = devm_kzalloc(&client->dev,
 								  data->tch_data_len, GFP_KERNEL);
-	if (!data)
+	if (!data){
 		return -ENOMEM;
-
+	}
 	input_dev = input_allocate_device();
-	if (!input_dev)
+	if (!input_dev){
 		return -ENOMEM;
-
+		}
 	data->input_dev = input_dev;
 	data->client = client;
 	data->pdata = pdata;
@@ -1170,3 +1182,4 @@ module_exit(ft5x06_ts_exit);
 
 MODULE_DESCRIPTION("FocalTech ft5x06 TouchScreen driver");
 MODULE_LICENSE("GPL v2");
+
