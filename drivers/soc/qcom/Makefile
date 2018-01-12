@@ -109,4 +109,5 @@ obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
 obj-$(CONFIG_MSM_HAB) += hab/
 obj-$(CONFIG_AUTOSMP) 				+= autosmp.o
+obj-$(CONFIG_THUNDERPLUG_CONTROL) += thunderplug.o
 
