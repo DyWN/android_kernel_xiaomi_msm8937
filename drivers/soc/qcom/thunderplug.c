@@ -1,4 +1,6 @@
 /* Copyright (c) 2015, Varun Chitre <varun.chitre15@gmail.com>
+ * 
+ * Tuned for Quad-Core Cpu by dev-harsh1998 <harshitjain6751@gmail.com> (Msm8916)
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -9,8 +11,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * A simple hotplugging driver.
- * Compatible from dual core CPUs to Octa Core CPUs
+ * A simple hotplugging driver optimized for Octa Core CPUs
  */
 
 #include <linux/module.h>
@@ -18,51 +19,37 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/input.h>
-#include <linux/slab.h>
+#include <linux/slab.h> 
 #include <linux/cpu.h>
 #include <linux/lcd_notify.h>
 #include <linux/cpufreq.h>
-#include "thunderplug.h"
 
-#define DEBUG                        0
-
-#define THUNDERPLUG                  "thunderplug"
-
-#define DRIVER_VERSION                5
-#define DRIVER_SUBVER                 0
-
-#define DEFAULT_CPU_LOAD_THRESHOLD   (65)
-#define MIN_CPU_LOAD_THRESHOLD       (10)
-
-#define HOTPLUG_ENABLED              (0)
-#define DEFAULT_HOTPLUG_STYLE         HOTPLUG_SCHED
-#define DEFAULT_SCHED_MODE            BALANCED
-
-#define DEF_SAMPLING_MS	             (500)
-#define MIN_SAMLING_MS               (50)
-#define MIN_CPU_UP_TIME              (750)
-#define TOUCH_BOOST_ENABLED          (0)
+static int suspend_cpu_num = 1, resume_cpu_num = 3;
+static int endurance_level = 0;
+static int device_cpus = 4;
+static int core_limit = 4;
 
 static bool isSuspended = false;
 
 struct notifier_block lcd_worker;
 
-static int suspend_cpu_num = 2, resume_cpu_num = (NR_CPUS -1);
-static int endurance_level = 0;
-static int core_limit = NR_CPUS;
+#define DEBUG 0
 
-static int now[8], last_time[8];
+#define THUNDERPLUG "thunderplug"
+
+#define DRIVER_VERSION  2
+#define DRIVER_SUBVER 5
+
+#define CPU_LOAD_THRESHOLD        (57) //Msm8916 power up early at 55 % because already cpus are weak in load handling
+
+#define DEF_SAMPLING_MS			(300)
 
 static int sampling_time = DEF_SAMPLING_MS;
-static int load_threshold = DEFAULT_CPU_LOAD_THRESHOLD;
+static int load_threshold = CPU_LOAD_THRESHOLD;
 
-#ifdef CONFIG_SCHED_HMP
-static int tplug_hp_style = DEFAULT_HOTPLUG_STYLE;
-#else
-static int tplug_hp_enabled = HOTPLUG_ENABLED;
-#endif
-static int tplug_sched_mode = DEFAULT_SCHED_MODE;
-static int touch_boost_enabled = TOUCH_BOOST_ENABLED;
+static int tplug_hp_enabled = 0;
+
+static int touch_boost_enabled = 0;
 
 static struct workqueue_struct *tplug_wq;
 static struct delayed_work tplug_work;
@@ -73,7 +60,7 @@ static struct delayed_work tplug_boost;
 static struct workqueue_struct *tplug_resume_wq;
 static struct delayed_work tplug_resume_work;
 
-static unsigned int last_load[8] = { 0 };
+static unsigned int last_load[4] = {0, 0, 0, 0}; //Msm8916 ify
 
 struct cpu_load_data {
 	u64 prev_cpu_idle;
@@ -85,56 +72,59 @@ struct cpu_load_data {
 	cpumask_var_t related_cpus;
 };
 
+int rita(int shreesha)
+{
+if(shreesha == 1) {
+shreesha = 0;
+pr_info("%s: Rita iz Really Hot , So return to 0 cause no other than Shreesha Has right on her dang it/n", THUNDERPLUG);
+}
+return shreesha;
+}
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
-
-/* Two Endurance Levels for Octa Cores,
- * Two for Quad Cores and
- * One for Dual
- */
 static inline void offline_cpus(void)
 {
 	unsigned int cpu;
+	endurance_level = rita(endurance_level);
 	switch(endurance_level) {
-		case 1:
-			if(suspend_cpu_num > NR_CPUS / 2 )
-				suspend_cpu_num = NR_CPUS / 2;
-		break;
+		/*case 1:
+			if(suspend_cpu_num > 1)
+				suspend_cpu_num = 1;
+		break;*/
 		case 2:
-			if( NR_CPUS >=4 && suspend_cpu_num > NR_CPUS / 4)
-				suspend_cpu_num = NR_CPUS / 4;
+			if(suspend_cpu_num > 1)
+				suspend_cpu_num = 1;
 		break;
 		default:
 		break;
 	}
-	for(cpu = NR_CPUS - 1; cpu > (suspend_cpu_num - 1); cpu--) {
+	for(cpu = 3; cpu > (suspend_cpu_num - 1); cpu--) {
 		if (cpu_online(cpu))
 			cpu_down(cpu);
 	}
-	pr_info("%s: %d cpus were offlined\n", THUNDERPLUG, (NR_CPUS - suspend_cpu_num));
+	pr_info("%s: %d cpus were offlined\n", THUNDERPLUG, (device_cpus - suspend_cpu_num));
 }
 
 static inline void cpus_online_all(void)
 {
 	unsigned int cpu;
+     endurance_level = rita(endurance_level);
 	switch(endurance_level) {
-	case 1:
-		if(resume_cpu_num > (NR_CPUS / 2) - 1 || resume_cpu_num == 1)
-			resume_cpu_num = ((NR_CPUS / 2) - 1);
-	break;
+	/*case 1:
+		if(resume_cpu_num > 2 || resume_cpu_num == 1)
+			resume_cpu_num = 2;
+	break;*/ // I too lub rita <3 but shree damn it she's bhabhi now
 	case 2:
-		if( NR_CPUS >= 4 && resume_cpu_num > ((NR_CPUS / 4) - 1))
-			resume_cpu_num = ((NR_CPUS / 4) - 1);
+		if(resume_cpu_num > 1)
+			resume_cpu_num = 1;
 	break;
 	case 0:
-			resume_cpu_num = (NR_CPUS - 1);
+		if(resume_cpu_num < 3)
+			resume_cpu_num = 3;
 	break;
 	default:
 	break;
 	}
-
-	if(DEBUG)
-		   pr_info("%s: resume_cpu_num = %d\n",THUNDERPLUG, resume_cpu_num);
 
 	for (cpu = 1; cpu <= resume_cpu_num; cpu++) {
 		if (cpu_is_offline(cpu))
@@ -147,7 +137,7 @@ static inline void cpus_online_all(void)
 static void __ref tplug_boost_work_fn(struct work_struct *work)
 {
 	int cpu;
-	for(cpu = 1; cpu < NR_CPUS; cpu++) {
+	for(cpu = 1; cpu < 2; cpu++) {
 		if(cpu_is_offline(cpu))
 			cpu_up(cpu);
 	}
@@ -156,13 +146,9 @@ static void __ref tplug_boost_work_fn(struct work_struct *work)
 static void tplug_input_event(struct input_handle *handle, unsigned int type,
 		unsigned int code, int value)
 {
-#ifdef CONFIG_SCHED_HMP
-    if ((type == EV_KEY) && (code == BTN_TOUCH) && (value == 1)
-		&& touch_boost_enabled == 1 && tplug_hp_style == 1)
-#else
+
 	if ((type == EV_KEY) && (code == BTN_TOUCH) && (value == 1)
 		&& touch_boost_enabled == 1 && tplug_hp_enabled == 1)
-#endif
 	{
 		if(DEBUG)
 			pr_info("%s : touch boost\n", THUNDERPLUG);
@@ -230,7 +216,7 @@ static ssize_t thunderplug_suspend_cpus_store(struct kobject *kobj, struct kobj_
 {
 	int val;
 	sscanf(buf, "%d", &val);
-	if(val < 1 || val > NR_CPUS)
+	if(val < 1 || val > 4)
 		pr_info("%s: suspend cpus off-limits\n", THUNDERPLUG);
 	else
 		suspend_cpu_num = val;
@@ -247,13 +233,11 @@ static ssize_t __ref thunderplug_endurance_store(struct kobject *kobj, struct ko
 {
 	int val;
 	sscanf(buf, "%d", &val);
-	if(tplug_hp_style == 1) {
 	switch(val) {
 	case 0:
-	case 1:
+    case 1:
 	case 2:
-		if(endurance_level!=val &&
-		   !(endurance_level > 1 && NR_CPUS < 4)) {
+		if(endurance_level!=val) {
 		endurance_level = val;
 		offline_cpus();
 		cpus_online_all();
@@ -263,9 +247,6 @@ static ssize_t __ref thunderplug_endurance_store(struct kobject *kobj, struct ko
 		pr_info("%s: invalid endurance level\n", THUNDERPLUG);
 	break;
 	}
-	}
-	else
-	   pr_info("%s: per-core hotplug style is disabled, ignoring endurance mode values\n", THUNDERPLUG);
 
 	return count;
 }
@@ -279,8 +260,36 @@ static ssize_t __ref thunderplug_sampling_store(struct kobject *kobj, struct kob
 {
 	int val;
 	sscanf(buf, "%d", &val);
-	if(val > MIN_SAMLING_MS)
+	if(val > 50)
 		sampling_time = val;
+
+	return count;
+}
+
+static ssize_t thunderplug_hp_enabled_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%d", tplug_hp_enabled);
+}
+
+static ssize_t __ref thunderplug_hp_enabled_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	int last_val = tplug_hp_enabled;
+	sscanf(buf, "%d", &val);
+	switch(val)
+	{
+		case 0:
+		case 1:
+			tplug_hp_enabled = val;
+		break;
+		default:
+			pr_info("%s : invalid choice\n", THUNDERPLUG);
+		break;
+	}
+
+	if(tplug_hp_enabled == 1 && tplug_hp_enabled != last_val)
+		queue_delayed_work_on(0, tplug_wq, &tplug_work,
+							msecs_to_jiffies(sampling_time));
 
 	return count;
 }
@@ -373,21 +382,21 @@ static void __cpuinit tplug_resume_work_fn(struct work_struct *work)
 static void __cpuinit tplug_work_fn(struct work_struct *work)
 {
 	int i;
-	unsigned int load[8], avg_load[8];
-
+	unsigned int load[4], avg_load[4];
+    endurance_level = rita(endurance_level);
 	switch(endurance_level)
 	{
 	case 0:
-		core_limit = NR_CPUS;
+		core_limit = 4;
 	break;
-	case 1:
-		core_limit = NR_CPUS / 2;
-	break;
+	/*case 1:
+		core_limit = 2;
+	break;*/ //shree pls keep sending pics of rita 
 	case 2:
-		core_limit = NR_CPUS / 4;
+		core_limit = 2; //According to maths it should be one but according to me it should be good to keep 2 cpus online for msm8918 <harshitjain6751@gmailcom>
 	break;
 	default:
-		core_limit = NR_CPUS;
+		core_limit = 4;
 	break;
 	}
 
@@ -408,28 +417,19 @@ static void __cpuinit tplug_work_fn(struct work_struct *work)
 	{
 	if(DEBUG)
 		pr_info("%s : bringing back cpu%d\n", THUNDERPLUG,i);
-		if(!((i+1) > 7)) {
-			last_time[i+1] = ktime_to_ms(ktime_get());
+		if(!((i+1) > 3))
 			cpu_up(i+1);
-		}
 	}
 	else if(cpu_online(i) && avg_load[i] < load_threshold && cpu_online(i+1))
 	{
-		if(DEBUG)
-			pr_info("%s : offlining cpu%d\n", THUNDERPLUG,i);
-			if(!(i+1)==0) {
-				now[i+1] = ktime_to_ms(ktime_get());
-				if((now[i+1] - last_time[i+1]) > MIN_CPU_UP_TIME)
-					cpu_down(i+1);
-			}
-		}
+	if(DEBUG)
+		pr_info("%s : offlining cpu%d\n", THUNDERPLUG,i);
+		if(!(i+1)==0)
+			cpu_down(i+1);
+	}
 	}
 
-#ifdef CONFIG_SCHED_HMP
-    if(tplug_hp_style == 1 && !isSuspended)
-#else
 	if(tplug_hp_enabled != 0 && !isSuspended)
-#endif
 		queue_delayed_work_on(0, tplug_wq, &tplug_work,
 			msecs_to_jiffies(sampling_time));
 	else {
@@ -447,11 +447,7 @@ static int lcd_notifier_callback(struct notifier_block *nb,
        switch (event) {
        case LCD_EVENT_ON_START:
 			isSuspended = false;
-#ifdef CONFIG_SCHED_HMP
-			if(tplug_hp_style==1)
-#else
 			if(tplug_hp_enabled)
-#endif
 				queue_delayed_work_on(0, tplug_wq, &tplug_work,
 								msecs_to_jiffies(sampling_time));
 			else
@@ -473,120 +469,6 @@ static int lcd_notifier_callback(struct notifier_block *nb,
 
        return 0;
 }
-
-/* Thunderplug load balancer */
-#ifdef CONFIG_SCHED_HMP
-
-static void set_sched_profile(int mode) {
-    switch(mode) {
-	   case 1:
-	       /* Balanced */
-	       sched_set_boost(DISABLED);
-	   break;
-	   case 2:
-	       /* Turbo */
-	       sched_set_boost(ENABLED);
-	   break;
-	   default:
-	       pr_info("%s: Invalid mode\n", THUNDERPLUG);
-	   break;
-	}
-}
-
-static ssize_t thunderplug_sched_mode_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-    return sprintf(buf, "%d", tplug_sched_mode);
-}
-
-static ssize_t __ref thunderplug_sched_mode_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
-{
-	int val;
-	sscanf(buf, "%d", &val);
-	set_sched_profile(val);
-	tplug_sched_mode = val;
-	return count;
-}
-
-static ssize_t thunderplug_hp_style_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-    return sprintf(buf, "%d", tplug_hp_style);
-}
-
-static ssize_t __ref thunderplug_hp_style_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
-{
-	int val, last_val;
-	sscanf(buf, "%d", &val);
-	last_val = tplug_hp_style;
-	switch(val)
-	{
-		case HOTPLUG_PERCORE:
-		case HOTPLUG_SCHED:
-			   tplug_hp_style = val;
-		break;
-		default:
-			pr_info("%s : invalid choice\n", THUNDERPLUG);
-		break;
-	}
-
-	if(tplug_hp_style == HOTPLUG_PERCORE && tplug_hp_style != last_val) {
-	    pr_info("%s: Switching to Per-core hotplug model\n", THUNDERPLUG);
-	    sched_set_boost(DISABLED);
-		queue_delayed_work_on(0, tplug_wq, &tplug_work,
-							msecs_to_jiffies(sampling_time));
-	}
-	else if(tplug_hp_style==2) {
-	    pr_info("%s: Switching to sched based hotplug model\n", THUNDERPLUG);
-	    set_sched_profile(tplug_sched_mode);
-	}
-
-	return count;
-}
-
-static struct kobj_attribute thunderplug_hp_style_attribute =
-       __ATTR(hotplug_style,
-               0666,
-               thunderplug_hp_style_show, thunderplug_hp_style_store);
-
-static struct kobj_attribute thunderplug_mode_attribute =
-       __ATTR(sched_mode,
-               0666,
-               thunderplug_sched_mode_show, thunderplug_sched_mode_store);
-
-#else
-static ssize_t thunderplug_hp_enabled_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-    return sprintf(buf, "%d", tplug_hp_enabled);
-}
-
-static ssize_t __ref thunderplug_hp_enabled_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
-{
-	int val;
-	sscanf(buf, "%d", &val);
-	int last_val = tplug_hp_enabled;
-	switch(val)
-	{
-		case 0:
-		case 1:
-			tplug_hp_enabled = val;
-		break;
-		default:
-			pr_info("%s : invalid choice\n", THUNDERPLUG);
-		break;
-	}
-
-	if(tplug_hp_enabled == 1 && tplug_hp_enabled != last_val)
-		queue_delayed_work_on(0, tplug_wq, &tplug_work,
-							msecs_to_jiffies(sampling_time));
-
-	return count;
-}
-
-static struct kobj_attribute thunderplug_hp_enabled_attribute =
-       __ATTR(hotplug_enabled,
-               0666,
-               thunderplug_hp_enabled_show, thunderplug_hp_enabled_store);
-
-#endif
 
 static ssize_t thunderplug_ver_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
@@ -618,6 +500,11 @@ static struct kobj_attribute thunderplug_load_attribute =
                0666,
                thunderplug_load_show, thunderplug_load_store);
 
+static struct kobj_attribute thunderplug_hp_enabled_attribute =
+       __ATTR(hotplug_enabled,
+               0666,
+               thunderplug_hp_enabled_show, thunderplug_hp_enabled_store);
+
 static struct kobj_attribute thunderplug_tb_enabled_attribute =
        __ATTR(touch_boost,
                0666,
@@ -630,12 +517,7 @@ static struct attribute *thunderplug_attrs[] =
         &thunderplug_endurance_attribute.attr,
         &thunderplug_sampling_attribute.attr,
         &thunderplug_load_attribute.attr,
-#ifdef CONFIG_SCHED_HMP
-        &thunderplug_mode_attribute.attr,
-        &thunderplug_hp_style_attribute.attr,
-#else
         &thunderplug_hp_enabled_attribute.attr,
-#endif
         &thunderplug_tb_enabled_attribute.attr,
         NULL,
     };
@@ -700,7 +582,7 @@ static int __init thunderplug_init(void)
 }
 
 MODULE_LICENSE("GPL and additional rights");
-MODULE_AUTHOR("Varun Chitre <varun.chitre15@gmail.com>");
-MODULE_DESCRIPTION("Hotplug driver for ARM SoCs");
+MODULE_AUTHOR("Varun Chitre <varun.chitre15@gmail.com> && Dev-harsh1998 <harshitjain6751@gmail.com>");
+MODULE_DESCRIPTION("Hotplug driver for Tuned for Quad-core CPU");
 late_initcall(thunderplug_init);
 
