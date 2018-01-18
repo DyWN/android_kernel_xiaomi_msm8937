@@ -38,7 +38,6 @@
 			< 5712 >, /* 8. DDR:748.80 MHz BIMC: 374.40 MHz */
 			< 6152 >, /* 9. DDR:806.40 MHz BIMC: 403.20 MHz */
 			< 7031 >; /* 10. DDR:921.60 MHz BIMC: 460.80 MHz */
-			
 	};
 
 	msm_gpu: qcom,kgsl-3d0@1c00000 {
@@ -56,7 +55,6 @@
 
 		qcom,idle-timeout = <80>; //msecs
 		qcom,strtstp-sleepwake;
-		
 		qcom,highest-bank-bit = <14>;
 		qcom,snapshot-size = <1048576>; //bytes
 
@@ -77,7 +75,7 @@
 		qcom,bus-control;
 		qcom,bus-width = <16>;
 		qcom,msm-bus,name = "grp3d";
-		qcom,msm-bus,num-cases = <11>;
+		qcom,msm-bus,num-cases = <10>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<26 512 0 0>,	    /*    off        */
@@ -89,8 +87,7 @@
 				<26 512 0 4454400>, /* 6. 556.80 MHz */
 				<26 512 0 5299200>, /* 7. 662.40 MHz */
 				<26 512 0 5990400>, /* 8. 748.80 MHz */
-				<26 512 0 6451200>, /* 9. 806.40 MHz */
-				<26 512 0 7372800>; /* 10. 921.60 MHz */
+				<26 512 0 6451200>; /* 9. 806.40 MHz */
 
 		/* GDSC regulator names */
 		regulator-names = "vddcx", "vdd";
@@ -113,7 +110,7 @@
 		coresight-outports = <0>;
 		coresight-child-list = <&funnel_mm>;
 		coresight-child-ports = <6>;
-		
+
 		/* Enable context aware freq. scaling */
 		qcom,enable-ca-jump;
 

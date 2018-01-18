@@ -864,8 +864,6 @@ static void xfer_work(struct work_struct *work)
 	dma_async_issue_pending(chan);
 	usbhsf_dma_start(pipe, fifo);
 	usbhs_pipe_enable(pipe);
-	usbhsf_dma_start(pipe, fifo);
-	dma_async_issue_pending(chan);
 }
 
 /*

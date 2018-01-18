@@ -191,6 +191,7 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 
 		batt_psy = power_supply_get_by_name("usb");
 	}else {
+
 		is_charger_plug = (u8)power_supply_get_battery_charge_state(batt_psy);
 
 		if (is_charger_plug != pre_charger_status) {
@@ -281,6 +282,7 @@ static irqreturn_t ft5x06_ts_interrupt(int irq, void *dev_id)
 static int ft5x06_power_on(struct ft5x06_ts_data *data, bool on)
 {
 	int rc;
+
 
 	if (!on){
 		goto power_off;
@@ -419,7 +421,7 @@ static int ft5x06_ts_pinctrl_select(struct ft5x06_ts_data *ft5x06_data,bool on)
 static int ft5x06_ts_suspend(struct device *dev)
 {
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
-	
+
 	int err;
 	#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
 	if(!dt2w_switch || in_phone_call){
@@ -492,7 +494,6 @@ static int ft5x06_ts_resume(struct device *dev)
 	struct ft5x06_ts_data *data = dev_get_drvdata(dev);
 	int err;
 
-
 	 
 	if (!data->suspended) {
 			dev_dbg(dev, "Already in awake state\n");
@@ -522,6 +523,7 @@ static int ft5x06_ts_resume(struct device *dev)
 	msleep(data->pdata->soft_rst_dly);
 	enable_irq(data->client->irq);
 	#if CTP_CHARGER_DETECT
+
 		batt_psy = power_supply_get_by_name("usb");
 		if (!batt_psy)
 			CTP_ERROR("tp resume battery supply not found\n");
@@ -764,6 +766,7 @@ static int ft5x06_parse_dt(struct device *dev,
 		pdata->info.upgrade_id_2 =  temp_val;
 
 	rc = of_property_read_u32(np, "ftech,fw-delay-readid-ms", &temp_val);
+
 	if (rc && (rc != -EINVAL)) {
 		dev_err(dev, "Unable to read fw delay read id\n");
 		return rc;
@@ -879,6 +882,7 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	data->tch_data_len = FT_TCH_LEN(pdata->num_max_touches);
 	data->tch_data = devm_kzalloc(&client->dev,
 								  data->tch_data_len, GFP_KERNEL);
+
 	if (!data){
 		return -ENOMEM;
 	}
@@ -886,6 +890,7 @@ static int ft5x06_ts_probe(struct i2c_client *client,
 	if (!input_dev){
 		return -ENOMEM;
 		}
+
 	data->input_dev = input_dev;
 	data->client = client;
 	data->pdata = pdata;
@@ -1182,4 +1187,3 @@ module_exit(ft5x06_ts_exit);
 
 MODULE_DESCRIPTION("FocalTech ft5x06 TouchScreen driver");
 MODULE_LICENSE("GPL v2");
-

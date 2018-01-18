@@ -714,4 +714,3 @@ module_exit(aw2013_led_exit);
 
 MODULE_DESCRIPTION("aw2013 driver");
 MODULE_LICENSE("GPL");
-
