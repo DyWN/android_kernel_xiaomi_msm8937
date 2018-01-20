@@ -23,5 +23,6 @@ obj-$(CONFIG_SOC_BUS) += soc.o
 obj-$(CONFIG_PINCTRL) += pinctrl.o
 obj-$(CONFIG_DEV_COREDUMP) += devcoredump.o
 
+ccflags-y := -Ofast
 ccflags-$(CONFIG_DEBUG_DRIVER) := -DDEBUG
 
