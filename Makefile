@@ -354,7 +354,7 @@ include $(srctree)/scripts/Kbuild.include
 # Make variables (CC, etc...)
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
-CC		= $(CROSS_COMPILE)gcc
+CC		= clang
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
@@ -376,10 +376,10 @@ AFLAGS_MODULE   =
 LDFLAGS_MODULE  =
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
-CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage -fno-tree-loop-im
+CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 CFLAGS_KCOV	= -fsanitize-coverage=trace-pc
 # Optimization flags specific to clang
-CLANG_OPT_FLAGS := -O3 $(call cc-option,-fsanitize=local-init)
+CLANG_OPT_FLAGS := -O3 $(call cc-option,-fsanitize=local-init,-floop-parallelize-all,-ftree-loop-if-convert,-floop-interchange)
 
 ifeq ($(cc-name),clang)
 ifneq ($(CROSS_COMPILE),)
