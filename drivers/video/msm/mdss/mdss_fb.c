@@ -83,6 +83,13 @@
  */
 #define MDP_TIME_PERIOD_CALC_FPS_US	1000000
 
+#define MDSS_BRIGHT_TO_BL_DIMMER(out, v) do {\
+			out = (12*v*v+1393*v+3060)/4465;\
+			} while (0)
+
+bool backlight_dimmer = false;
+module_param(backlight_dimmer, bool, 0755);
+
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
@@ -301,20 +308,18 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	/* This maps android backlight level 0 to 255 into
-	   driver backlight level 0 to bl_max with rounding */
-	#if 1
-	if (mfd->panel_info->bl_min == 1)
-		mfd->panel_info->bl_min = 5;
-	MDSS_BRIGHT_TO_BL1(bl_lvl, value, mfd->panel_info->bl_min, mfd->panel_info->bl_max,
-			brightness_min, mfd->panel_info->brightness_max);
-	if (bl_lvl && !value)
-		bl_lvl = 0;
+	if (backlight_dimmer) {
+		if (value < 3)
+			bl_lvl = 1;
+		else
+			MDSS_BRIGHT_TO_BL_DIMMER(bl_lvl, value);
+	} else {
 
-	#else
-	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
-				mfd->panel_info->brightness_max);
-        #endif
+	/* This maps android backlight level 0 to 255 into
+ 	   driver backlight level 0 to bl_max with rounding */
+ 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
+ 				mfd->panel_info->brightness_max);
+	}
 	if (!bl_lvl && value)
 		bl_lvl = 1;
 	pr_debug("bl_lvl is %d, value is %d\n", bl_lvl, value);
@@ -3371,36 +3376,34 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 
 	commit_v1 = &commit->commit_v1;
 	if (commit_v1->flags & MDP_VALIDATE_LAYER) {
-		if (!mfd->skip_koff_wait) {
-			ret = mdss_fb_wait_for_kickoff(mfd);
-			if (ret) {
-				pr_err("wait for kickoff failed\n");
-				goto end;
+		ret = mdss_fb_wait_for_kickoff(mfd);
+		if (ret) {
+			pr_err("wait for kickoff failed\n");
+		} else {
+			__ioctl_transition_dyn_mode_state(mfd,
+				MSMFB_ATOMIC_COMMIT, true, false);
+			if (mfd->panel.type == WRITEBACK_PANEL) {
+				output_layer = commit_v1->output_layer;
+				if (!output_layer) {
+					pr_err("Output layer is null\n");
+					goto end;
+				}
+				wb_change = !mdss_fb_is_wb_config_same(mfd,
+						commit_v1->output_layer);
+				if (wb_change) {
+					old_xres = pinfo->xres;
+					old_yres = pinfo->yres;
+					old_format = mfd->fb_imgType;
+					mdss_fb_update_resolution(mfd,
+						output_layer->buffer.width,
+						output_layer->buffer.height,
+						output_layer->buffer.format);
+				}
 			}
+			ret = mfd->mdp.atomic_validate(mfd, file, commit_v1);
+			if (!ret)
+				mfd->atomic_commit_pending = true;
 		}
-		__ioctl_transition_dyn_mode_state(mfd,
-			MSMFB_ATOMIC_COMMIT, true, false);
-		if (mfd->panel.type == WRITEBACK_PANEL) {
-			output_layer = commit_v1->output_layer;
-			if (!output_layer) {
-				pr_err("Output layer is null\n");
-				goto end;
-			}
-			wb_change = !mdss_fb_is_wb_config_same(mfd,
-					commit_v1->output_layer);
-			if (wb_change) {
-				old_xres = pinfo->xres;
-				old_yres = pinfo->yres;
-				old_format = mfd->fb_imgType;
-				mdss_fb_update_resolution(mfd,
-					output_layer->buffer.width,
-					output_layer->buffer.height,
-					output_layer->buffer.format);
-			}
-		}
-		ret = mfd->mdp.atomic_validate(mfd, file, commit_v1);
-		if (!ret)
-			mfd->atomic_commit_pending = true;
 		goto end;
 	} else {
 		ret = mdss_fb_pan_idle(mfd);
