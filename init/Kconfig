@@ -1437,6 +1437,11 @@ config CC_OPTIMIZE_FOR_SIZE
 
 	  If unsure, say N.
 
+config CC_OPTIMIZE_POLLY
+	bool "Optimize with POLLY"
+	help
+	  Enabling this option will pass polly optimization flags
+	  
 config SYSCTL
 	bool
 
