@@ -46,13 +46,8 @@
  * (to see the precise effective timeslice length of your workload,
  *  run vmstat and monitor the context-switches (cs) field)
  */
-#ifdef CONFIG_ZEN_INTERACTIVE
-unsigned int sysctl_sched_latency			= 3000000ULL;
-unsigned int normalized_sysctl_sched_latency		= 3000000ULL;
-#else
-unsigned int sysctl_sched_latency			= 6000000ULL;
-unsigned int normalized_sysctl_sched_latency		= 6000000ULL;
-#endif
+unsigned int sysctl_sched_latency = 6000000ULL;
+unsigned int normalized_sysctl_sched_latency = 6000000ULL;
 
 /*
  * The initial- and re-scaling of tunables is configurable
@@ -70,22 +65,13 @@ enum sched_tunable_scaling sysctl_sched_tunable_scaling
  * Minimal preemption granularity for CPU-bound tasks:
  * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
  */
-#ifdef CONFIG_ZEN_INTERACTIVE
-unsigned int sysctl_sched_min_granularity		= 300000ULL;
-unsigned int normalized_sysctl_sched_min_granularity	= 300000ULL;
-#else
-unsigned int sysctl_sched_min_granularity		= 750000ULL;
-unsigned int normalized_sysctl_sched_min_granularity	= 750000ULL;
-#endif
+unsigned int sysctl_sched_min_granularity = 750000ULL;
+unsigned int normalized_sysctl_sched_min_granularity = 750000ULL;
 
 /*
  * is kept at sysctl_sched_latency / sysctl_sched_min_granularity
  */
-#ifdef CONFIG_ZEN_INTERACTIVE
-static unsigned int sched_nr_latency = 10;
-#else
 static unsigned int sched_nr_latency = 8;
-#endif
 
 /*
  * After fork, child runs first. If set to 0 (default) then
@@ -109,17 +95,10 @@ unsigned int __read_mostly sysctl_sched_wake_to_idle;
  * and reduces their over-scheduling. Synchronous workloads will still
  * have immediate wakeup/sleep latencies.
  */
-#ifdef CONFIG_ZEN_INTERACTIVE
-unsigned int sysctl_sched_wakeup_granularity		= 500000UL;
-unsigned int normalized_sysctl_sched_wakeup_granularity	= 500000UL;
+unsigned int sysctl_sched_wakeup_granularity = 1000000UL;
+unsigned int normalized_sysctl_sched_wakeup_granularity = 1000000UL;
 
-const_debug unsigned int sysctl_sched_migration_cost	= 250000UL;
-#else
-unsigned int sysctl_sched_wakeup_granularity		= 1000000UL;
-unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
-
-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
-#endif
+const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
 
 /*
  * The exponential sliding  window over which load is averaged for shares
@@ -139,11 +118,7 @@ unsigned int __read_mostly sysctl_sched_shares_window = 10000000UL;
  *
  * default: 5 msec, units: microseconds
   */
-#ifdef CONFIG_ZEN_INTERACTIVE
-unsigned int sysctl_sched_cfs_bandwidth_slice		= 3000UL;
-#else
-unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
-#endif
+unsigned int sysctl_sched_cfs_bandwidth_slice = 5000UL;
 #endif
 
 static inline void update_load_add(struct load_weight *lw, unsigned long inc)
@@ -4780,6 +4755,19 @@ static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 #endif
 }
 
+static unsigned int Lgentle_fair_sleepers = 1;
+static unsigned int Larch_power = 0;
+
+void relay_gfs(unsigned int gfs)
+{
+	Lgentle_fair_sleepers = gfs;
+}
+
+void relay_ap(unsigned int ap)
+{
+	Larch_power = ap;
+}
+
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
@@ -4802,7 +4790,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		 * Halve their sleep time's effect, to allow
 		 * for a gentler effect of sleepers:
 		 */
-		if (sched_feat(GENTLE_FAIR_SLEEPERS))
+		if (Lgentle_fair_sleepers)
 			thresh >>= 1;
 
 		vruntime -= thresh;
@@ -7980,7 +7968,7 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 	unsigned long capacity = SCHED_CAPACITY_SCALE;
 	struct sched_group *sdg = sd->groups;
 
-	if (sched_feat(ARCH_CAPACITY))
+	if (sched_feat(Larch_power))
 		capacity *= arch_scale_cpu_capacity(sd, cpu);
 	else
 		capacity *= default_scale_cpu_capacity(sd, cpu);
@@ -7989,7 +7977,7 @@ static void update_cpu_capacity(struct sched_domain *sd, int cpu)
 
 	sdg->sgc->capacity_orig = capacity;
 
-	if (sched_feat(ARCH_CAPACITY))
+	if (sched_feat(Larch_power))
 		capacity *= arch_scale_freq_capacity(sd, cpu);
 	else
 		capacity *= default_scale_capacity(sd, cpu);
