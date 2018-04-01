@@ -183,7 +183,6 @@ static struct page **get_pages(struct drm_gem_object *obj)
 		}
 
 		msm_obj->pages = p;
-
 		msm_obj->sgt = drm_prime_pages_to_sg(p, npages);
 		if (IS_ERR(msm_obj->sgt)) {
 			void *ptr = ERR_CAST(msm_obj->sgt);
@@ -199,6 +198,7 @@ static struct page **get_pages(struct drm_gem_object *obj)
 		if (msm_obj->flags & (MSM_BO_WC|MSM_BO_UNCACHED))
 			dma_map_sg(dev->dev, msm_obj->sgt->sgl,
 					msm_obj->sgt->nents, DMA_BIDIRECTIONAL);
+
 	}
 
 	return msm_obj->pages;
