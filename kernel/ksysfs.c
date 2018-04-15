@@ -210,8 +210,9 @@ static struct attribute_group kernel_attr_group = {
 	.attrs = kernel_attrs,
 };
 
-static unsigned int Lgentle_fair_sleepers = 0;
+static unsigned int Lgentle_fair_sleepers = 1;
 static unsigned int Larch_power = 0;
+
 extern void relay_gfs(unsigned int gfs);
 extern void relay_ap(unsigned int ap);
 
@@ -223,7 +224,7 @@ static ssize_t gentle_fair_sleepers_show(struct kobject *kobj, struct kobj_attri
 static ssize_t gentle_fair_sleepers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	unsigned int input;
-	int ret;
+	int ret, cpu;
 	ret = sscanf(buf, "%u", &input);
 	if (input != 0 && input != 1)
 		input = 0;
