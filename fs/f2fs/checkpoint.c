@@ -238,11 +238,14 @@ static int __f2fs_write_meta_page(struct page *page,
 
 	trace_f2fs_writepage(page, META);
 
+	if (unlikely(f2fs_cp_error(sbi))) {
+		dec_page_count(sbi, F2FS_DIRTY_META);
+		unlock_page(page);
+		return 0;
+	}
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		goto redirty_out;
 	if (wbc->for_reclaim && page->index < GET_SUM_BLOCK(sbi, 0))
-		goto redirty_out;
-	if (unlikely(f2fs_cp_error(sbi)))
 		goto redirty_out;
 
 	write_meta_page(sbi, page, io_type);
@@ -797,7 +800,7 @@ int get_valid_checkpoint(struct f2fs_sb_info *sbi)
 	block_t cp_blk_no;
 	int i;
 
-	sbi->ckpt = kzalloc(cp_blks * blk_size, GFP_KERNEL);
+	sbi->ckpt = f2fs_kzalloc(sbi, cp_blks * blk_size, GFP_KERNEL);
 	if (!sbi->ckpt)
 		return -ENOMEM;
 	/*
