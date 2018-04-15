@@ -436,11 +436,6 @@ static struct alpha_pll_vco_tbl p_vco[] = {
 	VCO(0,  700000000, 1400000000),
 };
 
-/* Slewing plls won't allow to change vco_sel.
- * Hence will have only one vco table entry */
-static struct alpha_pll_vco_tbl p_vco_8937[] = {
-	VCO(1,  525000000, 1066000000),
-};
 
 static struct alpha_pll_clk gpll3_clk_src = {
 	.masks = &pll_masks_p,
@@ -746,8 +741,9 @@ static struct clk_freq_tbl ftbl_gcc_oxili_gfx3d_clk_8937[] = {
 	F_SLEW( 320000000, FIXED_CLK_SRC, gpll0,	2.5,	0,	0),
 	F_SLEW( 375000000, 750000000,	  gpll3,	1,	0,	0),
 	F_SLEW( 400000000, FIXED_CLK_SRC, gpll0,	2,	0,	0),
+	F_SLEW( 450000000, 900000000,	  gpll3,	1,	0,	0),
 	F_SLEW( 500000000, 1000000000,	  gpll3,	1,	0,	0),
-	F_SLEW( 600000000, 1200000000,	  gpll3,	1,	0,	0),
+	F_SLEW( 550000000, 1100000000,	  gpll3,	1,	0,	0),
 	F_END
 };
 
@@ -4212,10 +4208,7 @@ static void override_for_8917(int speed_bin)
 
 static void override_for_8937(int speed_bin)
 {
-	gpll3_clk_src.c.rate = 900000000;
-	gpll3_clk_src.vco_tbl = p_vco_8937;
-	gpll3_clk_src.num_vco = ARRAY_SIZE(p_vco_8937);
-	OVERRIDE_FMAX2(gpll3, LOW, 800000000, NOMINAL, 1066000000);
+	gpll3_clk_src.c.rate = 930000000;
 
 	OVERRIDE_FMAX1(cci, LOWER, 37500000);
 	OVERRIDE_FMAX3(csi0,
@@ -4244,9 +4237,9 @@ static void override_for_8937(int speed_bin)
 		OVERRIDE_FTABLE(gfx3d, ftbl_gcc_oxili_gfx3d_clk, 8937_475MHz);
 	} else {
 		OVERRIDE_FMAX5(gfx3d,
-			LOWER, 216000000, LOW, 300000000,
-			NOMINAL, 400000000, NOM_PLUS, 500000000,
-			HIGH, 600000000);
+			LOWER, 216000000, LOW, 320000000,
+			NOMINAL, 400000000, NOM_PLUS, 450000000,
+			HIGH, 500000000);
 		OVERRIDE_FTABLE(gfx3d, ftbl_gcc_oxili_gfx3d_clk, 8937);
 	}
 
@@ -4416,7 +4409,7 @@ static int msm_gcc_probe(struct platform_device *pdev)
 		get_speed_bin(pdev, &speed_bin);
 		override_for_8937(speed_bin);
 
-		if (compat_bin3) {
+		if (compat_bin3 || compat_bin) {
 			if (speed_bin) {
 				gfx3d_clk_src.freq_tbl =
 					ftbl_gcc_oxili_gfx3d_clk_8940_500MHz;
@@ -4424,9 +4417,9 @@ static int msm_gcc_probe(struct platform_device *pdev)
 								500000000;
 			} else {
 				gfx3d_clk_src.freq_tbl =
-					ftbl_gcc_oxili_gfx3d_clk_8937_475MHz;
+					ftbl_gcc_oxili_gfx3d_clk_8937;
 				gfx3d_clk_src.c.fmax[VDD_DIG_SUPER_TUR] =
-								475000000;
+								550000000;
 			}
 		}
 	} else if (compat_bin2 || compat_bin4) {
