@@ -15,34 +15,21 @@
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
 #include <linux/types.h>
-#include <linux/moduleparam.h>
-#include <linux/display_state.h>
 #include <trace/events/power.h>
-#include <linux/moduleparam.h>
-
-static bool enable_si_ws = true;
-module_param(enable_si_ws, bool, 0644);
-static bool enable_msm_hsic_ws = true;
-module_param(enable_msm_hsic_ws, bool, 0644);
 
 #include "power.h"
 
-static bool enable_qcom_rx_wakelock_ws = false;
-module_param(enable_qcom_rx_wakelock_ws, bool, 0644);
-static bool enable_wlan_extscan_wl_ws = false;
-module_param(enable_wlan_extscan_wl_ws, bool, 0644);
-static bool enable_ipa_ws = false;
-module_param(enable_ipa_ws, bool, 0644);
-static bool enable_wlan_wow_wl_ws = false;
-module_param(enable_wlan_wow_wl_ws, bool, 0644);
-static bool enable_wlan_ws = false;
-module_param(enable_wlan_ws, bool, 0644);
-static bool enable_timerfd_ws = false;
-module_param(enable_timerfd_ws, bool, 0644);
-static bool enable_netlink_ws = false;
-module_param(enable_netlink_ws, bool, 0644);
-static bool enable_netmgr_wl_ws = false;
-module_param(enable_netmgr_wl_ws, bool, 0644);
+
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+#include "boeffla_wl_blocker.h"
+
+char list_wl_search[LENGTH_LIST_WL_SEARCH] = {0};
+bool wl_blocker_active = false;
+bool wl_blocker_debug = false;
+
+static void wakeup_source_deactivate(struct wakeup_source *ws);
+#endif
+
 
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
@@ -406,6 +393,184 @@ int device_set_wakeup_enable(struct device *dev, bool enable)
 }
 EXPORT_SYMBOL_GPL(device_set_wakeup_enable);
 
+/*
+ * The functions below use the observation that each wakeup event starts a
+ * period in which the system should not be suspended.  The moment this period
+ * will end depends on how the wakeup event is going to be processed after being
+ * detected and all of the possible cases can be divided into two distinct
+ * groups.
+ *
+ * First, a wakeup event may be detected by the same functional unit that will
+ * carry out the entire processing of it and possibly will pass it to user space
+ * for further processing.  In that case the functional unit that has detected
+ * the event may later "close" the "no suspend" period associated with it
+ * directly as soon as it has been dealt with.  The pair of pm_stay_awake() and
+ * pm_relax(), balanced with each other, is supposed to be used in such
+ * situations.
+ *
+ * Second, a wakeup event may be detected by one functional unit and processed
+ * by another one.  In that case the unit that has detected it cannot really
+ * "close" the "no suspend" period associated with it, unless it knows in
+ * advance what's going to happen to the event during processing.  This
+ * knowledge, however, may not be available to it, so it can simply specify time
+ * to wait before the system can be suspended and pass it as the second
+ * argument of pm_wakeup_event().
+ *
+ * It is valid to call pm_relax() after pm_wakeup_event(), in which case the
+ * "no suspend" period will be ended either by the pm_relax(), or by the timer
+ * function executed when the timer expires, whichever comes first.
+ */
+
+/**
+ * wakup_source_activate - Mark given wakeup source as active.
+ * @ws: Wakeup source to handle.
+ *
+ * Update the @ws' statistics and, if @ws has just been activated, notify the PM
+ * core of the event by incrementing the counter of of wakeup events being
+ * processed.
+ */
+static void wakeup_source_activate(struct wakeup_source *ws)
+{
+	unsigned int cec;
+
+	/*
+	 * active wakeup source should bring the system
+	 * out of PM_SUSPEND_FREEZE state
+	 */
+	freeze_wake();
+
+	ws->active = true;
+	ws->active_count++;
+	ws->last_time = ktime_get();
+	if (ws->autosleep_enabled)
+		ws->start_prevent_time = ws->last_time;
+
+	/* Increment the counter of events in progress. */
+	cec = atomic_inc_return(&combined_event_count);
+
+	trace_wakeup_source_activate(ws->name, cec);
+}
+
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+// AP: Function to check if a wakelock is on the wakelock blocker list
+static bool check_for_block(struct wakeup_source *ws)
+{
+	char wakelock_name[52] = {0};
+	int length;
+
+	// if debug mode on, print every wakelock requested
+	if (wl_blocker_debug)
+		printk("Boeffla WL blocker: %s requested\n", ws->name);
+
+	// if there is no list of wakelocks to be blocked, exit without futher checking
+	if (!wl_blocker_active)
+		return false;
+
+	// only if ws structure is valid
+	if (ws)
+	{
+		// wake lock names handled have maximum length=50 and minimum=1
+		length = strlen(ws->name);
+		if ((length > 50) || (length < 1))
+			return false;
+
+		// check if wakelock is in wake lock list to be blocked
+		sprintf(wakelock_name, ";%s;", ws->name);
+
+		if(strstr(list_wl_search, wakelock_name) == NULL)
+			return false;
+
+		// wake lock is in list, print it if debug mode on
+		if (wl_blocker_debug)
+			printk("Boeffla WL blocker: %s blocked\n", ws->name);
+
+		// if it is currently active, deactivate it immediately + log in debug mode
+		if (ws->active)
+		{
+			wakeup_source_deactivate(ws);
+
+			if (wl_blocker_debug)
+				printk("Boeffla WL blocker: %s killed\n", ws->name);
+		}
+
+		// finally block it
+		return true;
+	}
+
+	// there was no valid ws structure, do not block by default
+	return false;
+}
+#endif
+
+/**
+ * wakeup_source_report_event - Report wakeup event using the given source.
+ * @ws: Wakeup source to report the event for.
+ */
+static void wakeup_source_report_event(struct wakeup_source *ws)
+{
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+	if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
+	{
+#endif
+		ws->event_count++;
+		/* This is racy, but the counter is approximate anyway. */
+		if (events_check_enabled)
+			ws->wakeup_count++;
+
+		if (!ws->active)
+			wakeup_source_activate(ws);
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+	}
+#endif
+}
+
+/**
+ * __pm_stay_awake - Notify the PM core of a wakeup event.
+ * @ws: Wakeup source object associated with the source of the event.
+ *
+ * It is safe to call this function from interrupt context.
+ */
+void __pm_stay_awake(struct wakeup_source *ws)
+{
+	unsigned long flags;
+
+	if (!ws)
+		return;
+
+	spin_lock_irqsave(&ws->lock, flags);
+
+	wakeup_source_report_event(ws);
+	del_timer(&ws->timer);
+	ws->timer_expires = 0;
+
+	spin_unlock_irqrestore(&ws->lock, flags);
+}
+EXPORT_SYMBOL_GPL(__pm_stay_awake);
+
+/**
+ * pm_stay_awake - Notify the PM core that a wakeup event is being processed.
+ * @dev: Device the wakeup event is related to.
+ *
+ * Notify the PM core of a wakeup event (signaled by @dev) by calling
+ * __pm_stay_awake for the @dev's wakeup source object.
+ *
+ * Call this function after detecting of a wakeup event if pm_relax() is going
+ * to be called directly after processing the event (and possibly passing it to
+ * user space for further processing).
+ */
+void pm_stay_awake(struct device *dev)
+{
+	unsigned long flags;
+
+	if (!dev)
+		return;
+
+	spin_lock_irqsave(&dev->power.lock, flags);
+	__pm_stay_awake(dev->power.wakeup);
+	spin_unlock_irqrestore(&dev->power.lock, flags);
+}
+EXPORT_SYMBOL_GPL(pm_stay_awake);
+
 #ifdef CONFIG_PM_AUTOSLEEP
 static void update_prevent_sleep_time(struct wakeup_source *ws, ktime_t now)
 {
@@ -416,6 +581,7 @@ static void update_prevent_sleep_time(struct wakeup_source *ws, ktime_t now)
 static inline void update_prevent_sleep_time(struct wakeup_source *ws,
 					     ktime_t now) {}
 #endif
+
 
 /**
  * wakup_source_deactivate - Mark given wakeup source as inactive.
@@ -472,171 +638,6 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 	if (!inpr && waitqueue_active(&wakeup_count_wait_queue))
 		wake_up(&wakeup_count_wait_queue);
 }
-
-static bool wakeup_source_blocker(struct wakeup_source *ws)
-{
-	unsigned int wslen = 0;
-
-	if (ws) {
-		wslen = strlen(ws->name);
-
-		if ((!enable_ipa_ws && !strncmp(ws->name, "IPA_WS", wslen)) ||
-			(!enable_wlan_extscan_wl_ws &&
-				!strncmp(ws->name, "wlan_extscan_wl", wslen)) ||
-			(!enable_qcom_rx_wakelock_ws &&
-				!strncmp(ws->name, "qcom_rx_wakelock", wslen)) ||
-			(!enable_wlan_ws &&
-				!strncmp(ws->name, "wlan", wslen)) ||
-			(!enable_netmgr_wl_ws &&
-				!strncmp(ws->name, "netmgr_wl", wslen)) ||
-			(!enable_timerfd_ws &&
-				!strncmp(ws->name, "[timerfd]", wslen)) ||
-			(!enable_netlink_ws &&
-				!strncmp(ws->name, "NETLINK", wslen))) {
-			if (ws->active) {
-				wakeup_source_deactivate(ws);
-				pr_info("forcefully deactivate wakeup source: %s\n",
-					ws->name);
-			}
-
-			return true;
-		}
-	}
-
-	return false;
-}
-
-/*
- * The functions below use the observation that each wakeup event starts a
- * period in which the system should not be suspended.  The moment this period
- * will end depends on how the wakeup event is going to be processed after being
- * detected and all of the possible cases can be divided into two distinct
- * groups.
- *
- * First, a wakeup event may be detected by the same functional unit that will
- * carry out the entire processing of it and possibly will pass it to user space
- * for further processing.  In that case the functional unit that has detected
- * the event may later "close" the "no suspend" period associated with it
- * directly as soon as it has been dealt with.  The pair of pm_stay_awake() and
- * pm_relax(), balanced with each other, is supposed to be used in such
- * situations.
- *
- * Second, a wakeup event may be detected by one functional unit and processed
- * by another one.  In that case the unit that has detected it cannot really
- * "close" the "no suspend" period associated with it, unless it knows in
- * advance what's going to happen to the event during processing.  This
- * knowledge, however, may not be available to it, so it can simply specify time
- * to wait before the system can be suspended and pass it as the second
- * argument of pm_wakeup_event().
- *
- * It is valid to call pm_relax() after pm_wakeup_event(), in which case the
- * "no suspend" period will be ended either by the pm_relax(), or by the timer
- * function executed when the timer expires, whichever comes first.
- */
-
-/**
- * wakup_source_activate - Mark given wakeup source as active.
- * @ws: Wakeup source to handle.
- *
- * Update the @ws' statistics and, if @ws has just been activated, notify the PM
- * core of the event by incrementing the counter of of wakeup events being
- * processed.
- */
-static void wakeup_source_activate(struct wakeup_source *ws)
-{
-	unsigned int cec;
-
-	if (!enable_si_ws && !strcmp(ws->name, "sensor_ind")) {
-		pr_info("wakeup source sensor_ind activate skipped\n");
-		return;
-	}
-
-	if (!enable_msm_hsic_ws && !strcmp(ws->name, "msm_hsic_host")) {
-                pr_info("wakeup source msm_hsic_host activate skipped\n");
-                return;
-        }
-
-	/*
-	 * active wakeup source should bring the system
-	 * out of PM_SUSPEND_FREEZE state
-	 */
-	freeze_wake();
-
-	ws->active = true;
-	ws->active_count++;
-	ws->last_time = ktime_get();
-	if (ws->autosleep_enabled)
-		ws->start_prevent_time = ws->last_time;
-
-	/* Increment the counter of events in progress. */
-	cec = atomic_inc_return(&combined_event_count);
-
-	trace_wakeup_source_activate(ws->name, cec);
-}
-
-/**
- * wakeup_source_report_event - Report wakeup event using the given source.
- * @ws: Wakeup source to report the event for.
- */
-static void wakeup_source_report_event(struct wakeup_source *ws)
-{
-	if (!wakeup_source_blocker(ws)) {
-		ws->event_count++;
-		/* This is racy, but the counter is approximate anyway. */
-		if (events_check_enabled)
-			ws->wakeup_count++;
-
-		if (!ws->active)
-			wakeup_source_activate(ws);
-	}
-}
-
-/**
- * __pm_stay_awake - Notify the PM core of a wakeup event.
- * @ws: Wakeup source object associated with the source of the event.
- *
- * It is safe to call this function from interrupt context.
- */
-void __pm_stay_awake(struct wakeup_source *ws)
-{
-	unsigned long flags;
-
-	if (!ws)
-		return;
-
-	spin_lock_irqsave(&ws->lock, flags);
-
-	wakeup_source_report_event(ws);
-	del_timer(&ws->timer);
-	ws->timer_expires = 0;
-
-	spin_unlock_irqrestore(&ws->lock, flags);
-}
-EXPORT_SYMBOL_GPL(__pm_stay_awake);
-
-/**
- * pm_stay_awake - Notify the PM core that a wakeup event is being processed.
- * @dev: Device the wakeup event is related to.
- *
- * Notify the PM core of a wakeup event (signaled by @dev) by calling
- * __pm_stay_awake for the @dev's wakeup source object.
- *
- * Call this function after detecting of a wakeup event if pm_relax() is going
- * to be called directly after processing the event (and possibly passing it to
- * user space for further processing).
- */
-void pm_stay_awake(struct device *dev)
-{
-	unsigned long flags;
-
-	if (!dev)
-		return;
-
-	spin_lock_irqsave(&dev->power.lock, flags);
-	__pm_stay_awake(dev->power.wakeup);
-	spin_unlock_irqrestore(&dev->power.lock, flags);
-}
-EXPORT_SYMBOL_GPL(pm_stay_awake);
 
 /**
  * __pm_relax - Notify the PM core that processing of a wakeup event has ended.
@@ -805,16 +806,13 @@ void pm_print_active_wakeup_sources(void)
 	int active = 0;
 	struct wakeup_source *last_activity_ws = NULL;
 
-	// kinda pointless to force this routine during screen on
-	if (is_display_on())
-		return;
-
 	rcu_read_lock();
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
 		if (ws->active) {
 			pr_info("active wakeup source: %s\n", ws->name);
-
-			if (!wakeup_source_blocker(ws))
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+			if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
+#endif
 				active = 1;
 		} else if (!active &&
 			   (!last_activity_ws ||
