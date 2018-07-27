@@ -440,7 +440,7 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_hvdcp_icl_ma = 1800;
+static int smbchg_default_hvdcp_icl_ma = 2000;
 module_param_named(
 	default_hvdcp_icl_ma, smbchg_default_hvdcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -2293,6 +2293,8 @@ static void smbchg_parallel_usb_enable(struct smbchg_chip *chip,
 		power_supply_set_voltage_limit(chip->usb_psy,
 				(chip->vfloat_mv + 50) * 1000);
 	}
+	power_supply_set_voltage_limit(chip->usb_psy,
+			(chip->vfloat_mv + 50) * 1000);
 	/* Set USB ICL */
 	target_icl_ma = get_effective_result_locked(chip->usb_icl_votable);
 	if (target_icl_ma < 0) {
@@ -3365,8 +3367,11 @@ static int smbchg_float_voltage_set(struct smbchg_chip *chip, int vfloat_mv)
 
 	if (rc)
 		dev_err(chip->dev, "Couldn't set float voltage rc = %d\n", rc);
-	else
+	else {
 		chip->vfloat_mv = vfloat_mv;
+		power_supply_set_voltage_limit(chip->usb_psy,
+				chip->vfloat_mv * 1000);
+	}
 
 	power_supply_set_voltage_limit(chip->usb_psy,
 				(chip->vfloat_mv * 1000));
@@ -4309,12 +4314,10 @@ static void smbchg_chg_led_brightness_set(struct led_classdev *cdev,
 	reg = (value > LED_OFF) ? CHG_LED_ON << CHG_LED_SHIFT :
 		CHG_LED_OFF << CHG_LED_SHIFT;
 
-	if (chip->bms_psy) {
-		if (value > LED_OFF)
-			power_supply_set_hi_power_state(chip->bms_psy, 1);
-		else
-			power_supply_set_hi_power_state(chip->bms_psy, 0);
-	}
+	if (value > LED_OFF)
+		power_supply_set_hi_power_state(chip->bms_psy, 1);
+	else
+		power_supply_set_hi_power_state(chip->bms_psy, 0);
 
 	pr_smb(PR_STATUS,
 			"set the charger led brightness to value=%d\n",
@@ -4357,16 +4360,11 @@ static void smbchg_chg_led_blink_set(struct smbchg_chip *chip,
 	u8 reg;
 	int rc;
 
-	if (chip->bms_psy) {
-		if (blinking == 0)
-			power_supply_set_hi_power_state(chip->bms_psy, 0);
-		else
-			power_supply_set_hi_power_state(chip->bms_psy, 1);
-	}
-
 	if (blinking == 0) {
 		reg = CHG_LED_OFF << CHG_LED_SHIFT;
+		power_supply_set_hi_power_state(chip->bms_psy, 0);
 	} else {
+		power_supply_set_hi_power_state(chip->bms_psy, 1);
 		if (blinking == 1)
 			reg = LED_BLINKING_PATTERN2 << CHG_LED_SHIFT;
 		else if (blinking == 2)
@@ -6605,8 +6603,6 @@ static irqreturn_t batt_cold_handler(int irq, void *_chip)
 			get_prop_batt_health(chip));
 	return IRQ_HANDLED;
 }
-#define BATT_WARM_CURRENT		900
-#define BATT_WARM_VOLTAGE		15
 
 static irqreturn_t batt_warm_handler(int irq, void *_chip)
 {
@@ -6616,10 +6612,6 @@ static irqreturn_t batt_warm_handler(int irq, void *_chip)
 	smbchg_read(chip, &reg, chip->bat_if_base + RT_STS, 1);
 	chip->batt_warm = !!(reg & HOT_BAT_SOFT_BIT);
 	pr_smb(PR_INTERRUPT, "triggered: 0x%02x\n", reg);
-	smbchg_fastchg_current_comp_set(chip,
-			BATT_WARM_CURRENT);
-	smbchg_float_voltage_comp_set(chip,
-			BATT_WARM_VOLTAGE);
 	smbchg_parallel_usb_check_ok(chip);
 	if (chip->psy_registered)
 		power_supply_changed(&chip->batt_psy);
@@ -6627,8 +6619,7 @@ static irqreturn_t batt_warm_handler(int irq, void *_chip)
 			get_prop_batt_health(chip));
 	return IRQ_HANDLED;
 }
-#define BATT_COOL_CURRENT		900
-#define BATT_COOL_VOLTAGE		5
+
 
 static irqreturn_t batt_cool_handler(int irq, void *_chip)
 {
@@ -6638,10 +6629,6 @@ static irqreturn_t batt_cool_handler(int irq, void *_chip)
 	smbchg_read(chip, &reg, chip->bat_if_base + RT_STS, 1);
 	chip->batt_cool = !!(reg & COLD_BAT_SOFT_BIT);
 	pr_smb(PR_INTERRUPT, "triggered: 0x%02x\n", reg);
-	smbchg_fastchg_current_comp_set(chip,
-			BATT_COOL_CURRENT);
-	smbchg_float_voltage_comp_set(chip,
-			BATT_COOL_VOLTAGE);
 	smbchg_parallel_usb_check_ok(chip);
 	if (chip->psy_registered)
 		power_supply_changed(&chip->batt_psy);

@@ -904,3 +904,25 @@ config WCD_DSP_GLINK
 source "drivers/soc/qcom/memshare/Kconfig"
 
 endif # ARCH_MSM
+
+config AUTOSMP
+	bool "Multi-core automatic hotplug support"
+	depends on SMP && HOTPLUG_CPU
+	default n
+	help
+	  Automatically hotplugs the multiple cpu cores on and off
+	  based on cpu load and suspend state.
+
+config AiO_HotPlug
+       bool "An All in One HotPlug for Octa-Core big.LITTLE SoCs."
+       default y
+       help
+	    An All in One HotPlug for Octa-Core big.LITTLE SoCs developed by 
+	    Shoaib Anwar a.k.a Shoaib0597. This HotPlug doesn't creates a workqueue
+	    as well as this is not a Load-Based HotPlug. Hence, this HotPlug is very
+	    Efficient in terms of CPU and Battery Consumption. Moreover, as the
+	    name indicates, this HotPlug provides absolute flexibility in terms
+	    of usage. The users can put either of the two Clusters offline if they
+	    want to. Also, users can create Dual, Quad and Hexa Core Combos for
+	    more Efficiency and Better Performance.
+
